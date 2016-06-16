@@ -2,10 +2,30 @@ from tqdm import tqdm
 import collections
 import itertools
 
+"""
+Implements apriori algorithms and association rules.
+"""
 
 def init_pass(file, minsup):
     """
-    Returns a list of all individually frequent items in the transaction set.
+    File is an inputted comma-separated list of transactions whose first item is the counter for the line number of
+    the transaction, and each item afterwards is the index of the item under consideration. Example:
+
+        1,19,12,93
+        2,29,31,15
+        3,16,81,12
+        4,99,101,12
+        ...
+
+    The goal of init_pass is to return every individual item in the itemsets which is, taken by itself, "frequent",
+    in the sense that it occurs at least minsup*100 percent of the time.
+
+    This algorithm is used to generate the initial list of inputs in the apriori algorithm. It is thus a helper
+    function.
+
+    Note that this algorithm actually returns (itemset, n). Every loop in the apriori algorithm requires reading in
+    n, and it's more efficient to read it once here (since we are reading the file anyway) and pass it along for use
+    in the apriori algorithm.
     """
     # The file being read is 75000-out1.csv. The line read is "transaction_number, item, ..., item\n"
     # 1. The first item in the line is a count and needs to be removed.
@@ -26,7 +46,35 @@ def init_pass(file, minsup):
 
 def apriori(file, minsup):
     """
-    Implements the apriori frequent itemset generation algorithm with minimum support minsup.
+    Implements the Apriori frequent itemset generation algorithm with minimum support minsup.
+
+    File an inputted comma-separated list of transactions whose first item is the counter for the line number of
+    the transaction, and each item afterwards is the index of the item under consideration. Example:
+
+        1,19,12,93
+        2,29,31,15
+        3,16,81,12
+        4,99,101,12
+        ...
+
+    The goal of apriori algorithm is to return all "frequent" itemsets in the dataset, in the sense that the
+    itemsets occur at least minsup*100 percent of the time.
+
+    This search occurs in levels. Initially the algorithm generates a list of all singularly frequent itemsets,
+    using the init_pass() method described above. It passes this result to the F_k_minus_1 holder.
+
+    While F_k_minus_1 (consisting of itemsets of the k-1-level) is not empty, the apriori algorithm generates a list of
+    k-level downwards closed candidate itemsets (generated using candidate_gen() below) and then validates them by
+    looping through the file, counting the number of occurrences of that set or subset in the itemsets present in the
+    transaction list, and eliminating those that are not frequent, in the sense that they do not have a certain
+    minimum "support" - they do not appear often enough in the data to be predicatively valuable.
+
+    Those that are deemed frequent are saved to the running tally and passed to the next iteration of the loop.
+
+    The loop and the algorithm ends when F_k_minus_1 is empty, indicating that no further supersets can be built.
+    Then all that is left is to return the aggregated result, F_k.
+
+    Far more on the mechanics of this algorithm is contained in the candidate_gen() docstring.
     """
     # Initialize the list of things with the list of all singular supported rules in the set.
     # Note that this is a modification of line 1,2 in the psuedocode, for efficiency we pass n here for reuse.
@@ -59,12 +107,67 @@ def apriori(file, minsup):
 
 def candidate_gen(F_k_minus_1):
     """
-    Generates a list of candidates for further consideration in the generation of frequent itemsets.
-    Uses downwards closure to generate and then prune candidates smartly.
+    "Downward closure" is a property of a list of frequent of items. It states that given a list of all frequent
+    itemsets of length k - 1, frequent itemsets of length k must not contain any subsets of length n < k which are
+    not themselves frequent.
+
+    That is, suppose that the following set is frequent:
+
+    {1, 2, 3}
+
+    But the follow set is not:
+
+    {3, 4}
+
+    Then {1, 2, 3, 4}, {2, 3, 4}, and {1, 3, 4} are not a possible rules because they contain {3, 4} as a subset,
+    and {3, 4} on its own is at least as frequent as any superset of itself---a contradition.
+
+    Note that this is a necessary but not satisfactory condition. That is, if we know that {1, 2} and {2,
+    3} are frequent, it is not immediately implied that {1, 2, 3} is frequent. Rather, it is just a candidate which
+    cannot be eliminated.
+
+    Downward closure is applied to iterate through the set of candidates more intelligently than blind selection. We
+    do this by taking advantage of an easy consequent of the property: the fact that if we are in the space of
+    k-sized itemsets, a frequent itemset must merely not contain a k-1 sized itemset not in the space of k-1-sized
+    itemsets.
+
+    That is, if we consider {1, 2, 3} (k=3), showing that the k=2 "level" contains all of [{1,2}, {1,3}, {2,
+    3}] is sufficient to show also that it contains all of [{1}, {2}, {3}]. This extends similarly to higher levels.
+
+    Thus this search is what is known as a "level-wise search". It takes a set of known frequent k-1 level itemsets and
+    outputs k-level candidate itemsets.
+
+    A further refinement is that we do not generate the candidates that we test either. We generate them by combining
+    k-1-level sets ordered lexically (e.g. {1, 2, 3}, {2, 4, 5}, not {1,5,2}) that differ only in the last place,
+    and appending that differing digit to the end of the set. So for example:
+
+    {1, 2, 3} ^ {2, 3, 4} becomes {1, 2, 3, 4}
+
+    Why can we do this? Consider the case of {1, 2, 3, 5}, or some other random attached number that we may consider.
+    Notice that under closure, for this itemset to be frequent {1, 2, 3} and {1, 2, 5} must be also. In other words,
+    the combination of itemsets that we generate using this technique will be a superset of the set of actually
+    frequent itemsets. The mapping is surjective with respect to the codomain of k-level frequent itemsets.
+
+    However, the mapping is also surjective with respect to the codomain of downwards closed k-level candidate itemsets.
+    Notice that generating the case {1, 2, 3, 4} would also require that {1, 2, 4} be frequent, and {1, 3, 4},
+    and so on, at least according to downwards closure. We make no such requirement of our generated candidate
+    itemset. Thus the itemsets generated by this hueristic are a superset of the set of downwards closed frequent
+    itemsets!
+
+    Still, it's such a big improvement in performance it's worth implementing it in this way anyway. Explicitly
+    checking all of the conditions beforehand is impractical, at least in terms of design, so we implement this
+    selection in two generalized steps:
+
+    1. The join step. Lexically ordered k-1-level itemsets are combined in the manner noted above in order to
+       generate the set of k-level itemset candidates. This set of candidates will be a superset of the set of
+       downwards closed itemset candidates.
+    2. The pruning step. In this step we actually do consider all possible k-1-level subsets of each candidate k-level
+       itemset and make sure that it is completely contained in the k-1-level itemsets. We eliminate those that are
+       not, arriving ultimately at a k-level downwards closed candidate itemset. This is what we return.
+
+    This function does implement the further step of validating these candidates. This is done in the main apriori
+    algorithm.
     """
-    # F_k_minus_1 is the existing list of candidates:
-    # ex. [[1, 2, 3], [1, 2, 5]]
-    # Note that lexical order matters! This is easiest way to track candidates differing in only one place.
     # Since order matters despite the notation used in the pseudocode we will have to store items as a list, as Python
     # sets neither maintain order not accept unhashable types as elements.
     C_k = [] # Initialize the fresh candidate list.
@@ -109,11 +212,11 @@ def candidate_gen(F_k_minus_1):
     return C_k
 
 
-def genRules(F):
+def genRules(minconf, minsup):
     """
-    :param F:
-    :return:
+    The confidence of a
     """
+    # A
     pass
 
 
@@ -142,7 +245,7 @@ def ap_genRules(f_k, H_m , n, minconf, file):
                 if set(f_k).issubset(check_set):
                     print("Checkpoint")
                     counts[tuple(f_k)] += 1
-                # Then for each of the consequents check if f_k less that consequent appears. If it does,
+                # Then for ech of the consequents check if f_k less that consequent appears. If it does,
                 # add to that consequent's tally.
                 for h_k_plus_1 in H_m_plus_1:
                     print(set(f_k).symmetric_difference(set(h_k_plus_1)))
