@@ -1,13 +1,17 @@
 from tqdm import tqdm
 import collections
 import itertools
+import click
 
 """
-Implements apriori algorithms and association rules.
+The Apriori algorithm is a (relatively) simple algorithm for generating frequent itemsets from a list of itemsets. This module implements these.
 """
+
 
 def init_pass(file, minsup):
     """
+    Helper method for apriori().
+
     File is an inputted comma-separated list of transactions whose first item is the counter for the line number of
     the transaction, and each item afterwards is the index of the item under consideration. Example:
 
@@ -44,17 +48,25 @@ def init_pass(file, minsup):
     return [[item] for (item, count) in count.items() if count / n > minsup], n
 
 
-def apriori(file, minsup):
+def apriori(file, minsup, noindex=False):
     """
     Implements the Apriori frequent itemset generation algorithm with minimum support minsup.
 
-    File an inputted comma-separated list of transactions whose first item is the counter for the line number of
-    the transaction, and each item afterwards is the index of the item under consideration. Example:
+    If noindex is false, the file an inputted comma-separated list of transactions whose first item is the counter for
+    the line number of the transaction, and each item afterwards is the index of the item under consideration. Example:
 
         1,19,12,93
         2,29,31,15
         3,16,81,12
         4,99,101,12
+        ...
+
+    If noindex is true, the file is the same input without the first-column index:
+
+        19,12,93
+        29,31,15
+        16,81,12
+        99,101,12
         ...
 
     The goal of apriori algorithm is to return all "frequent" itemsets in the dataset, in the sense that the
@@ -262,3 +274,36 @@ def ap_genRules(f_k, H_m , n, minconf, file):
             else:
                 H_m_plus_1.remove(h_m_plus_1)
         ap_genRules(f_k, H_m_plus_1, n, minconf, file)
+
+
+@click.command()
+@click.argument("--file"
+              # help=
+              # """
+              # The file that itemsets will be read from.
+              # Expects a comma-separated list of the form index,item_1,item_2,item_3,..., unless --no-index is called, in which case
+              # expects a comma-separated list of form item_1,_item_2,_item_3,...
+              # """)
+                )
+@click.option("--noindex",
+              default=False,
+              help="""
+              If noindex is not specified the algorithm expects a comma-seperated list of the form index,item_1,item_2,item_3,...,
+              If noindex is specified the algorithm excepts a comma-separated list of the form item_1,item_2,item_3,...,
+              """)
+@click.argument("--minsup", type=float
+              # help=
+              # """
+              # The minimum support (percentage of transactions) at which an itemset is considered "frequent".
+              # """
+              )
+def main(__file, __minsup, noindex):
+    """
+    Main function called at runtime. Implements a command-line interface to this module using the click library.
+    """
+    result = apriori(__file, __minsup, noindex)
+    print(result)
+
+
+if __name__ == '__main__':
+    main()
